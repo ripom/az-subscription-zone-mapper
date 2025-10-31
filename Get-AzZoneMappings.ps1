@@ -52,10 +52,19 @@ function Get-SubscriptionZoneMappings {
         Write-ColorOutput "  Processing subscription: $SubscriptionName ($SubscriptionId)" "Cyan"
         
         # Set the active subscription context
-        $null = az account set --subscription $SubscriptionId 2>&1
+        $setAccountResult = az account set --subscription $SubscriptionId 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to set subscription context: $setAccountResult"
+        }
         
         # Get all locations for the subscription
-        $locationsJson = az account list-locations --output json 2>&1 | Out-String
+        $locationsJson = az account list-locations --output json 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-ColorOutput "    Failed to retrieve locations: $locationsJson" "Yellow"
+            return $null
+        }
+        
+        $locationsJson = $locationsJson | Out-String
         
         if ([string]::IsNullOrWhiteSpace($locationsJson)) {
             Write-ColorOutput "    No locations found for subscription" "Yellow"
@@ -70,7 +79,13 @@ function Get-SubscriptionZoneMappings {
             
             # Query the location metadata including zone mappings
             $uri = "https://management.azure.com/subscriptions/$SubscriptionId/locations/$locationName`?api-version=2022-12-01"
-            $locationDetailsJson = az rest --uri $uri --method GET 2>&1 | Out-String
+            $locationDetailsJson = az rest --uri $uri --method GET 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                # Some locations may not support the API call, continue silently
+                continue
+            }
+            
+            $locationDetailsJson = $locationDetailsJson | Out-String
             
             if ([string]::IsNullOrWhiteSpace($locationDetailsJson)) {
                 continue
@@ -99,6 +114,7 @@ function Get-SubscriptionZoneMappings {
                     }
                     
                     Write-ColorOutput "    Extracted $($zoneMappings.Count) zone mapping(s)" "Green"
+                    # Return after finding the first region with zone mappings (per requirement)
                     return $zoneMappings
                 }
             }
@@ -126,7 +142,12 @@ try {
     
     # Get the current tenant ID to filter subscriptions
     Write-ColorOutput "Retrieving current tenant information..." "Cyan"
-    $accountJson = az account show --output json 2>&1 | Out-String
+    $accountJson = az account show --output json 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to get current account information. Please run 'az login' first. Error: $accountJson"
+    }
+    
+    $accountJson = $accountJson | Out-String
     
     if ([string]::IsNullOrWhiteSpace($accountJson)) {
         throw "Failed to get current account information. Please run 'az login' first."
@@ -138,7 +159,12 @@ try {
     
     # Get all subscriptions
     Write-ColorOutput "Retrieving all subscriptions in the tenant..." "Cyan"
-    $subscriptionsJson = az account list --output json 2>&1 | Out-String
+    $subscriptionsJson = az account list --output json 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to retrieve subscriptions list. Error: $subscriptionsJson"
+    }
+    
+    $subscriptionsJson = $subscriptionsJson | Out-String
     
     if ([string]::IsNullOrWhiteSpace($subscriptionsJson)) {
         throw "Failed to retrieve subscriptions list."
@@ -155,7 +181,8 @@ try {
         throw "No subscriptions found in the current tenant."
     }
     
-    # Collect all zone mappings
+    # Collect all zone mappings from all subscriptions
+    # For each subscription, we identify the FIRST region with zone mappings
     $allZoneMappings = @()
     
     foreach ($subscription in $subscriptions) {
@@ -163,8 +190,6 @@ try {
         
         if ($mappings) {
             $allZoneMappings += $mappings
-            # We found mappings, so we can stop (requirement: first region with availabilityZoneMappings)
-            # However, based on the description, we should process all subscriptions
         }
     }
     
