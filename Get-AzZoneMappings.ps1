@@ -78,7 +78,7 @@ function Get-SubscriptionZoneMappings {
             $locationName = $location.name
             
             # Query the location metadata including zone mappings
-            $uri = "https://management.azure.com/subscriptions/$SubscriptionId/locations/$locationName`?api-version=2022-12-01"
+            $uri = "https://management.azure.com/subscriptions/$SubscriptionId/locations/$locationName?api-version=2022-12-01"
             $locationDetailsJson = az rest --uri $uri --method GET 2>&1
             if ($LASTEXITCODE -ne 0) {
                 # Some locations may not support the API call, continue silently
@@ -204,7 +204,7 @@ try {
         
         # Display results to console
         Write-ColorOutput "Zone Mappings:" "Cyan"
-        $allZoneMappings | Format-Table -AutoSize | Out-String | Write-Host
+        $allZoneMappings | Format-Table -AutoSize
         
         # Export to CSV
         $allZoneMappings | Export-Csv -Path $OutputPath -NoTypeInformation -Encoding UTF8
