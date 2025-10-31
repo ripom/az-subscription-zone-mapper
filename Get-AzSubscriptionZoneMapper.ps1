@@ -77,76 +77,58 @@ foreach ($subscription in $subscriptions) {
         continue
     }
     
-    # Query locations (regions) for this subscription
-    Write-Host "  Querying available regions..." -ForegroundColor Yellow
-    $locationsJson = az account list-locations --query "[].{name:name, displayName:displayName}" -o json 2>&1
+    # Query location details via REST API to get availability zone mappings
+    Write-Host "  Querying region availability zone mappings via REST API..." -ForegroundColor Yellow
+    $locationDetailsJson = az rest --method get --url "https://management.azure.com/subscriptions/$($subscription.id)/locations?api-version=2022-12-01" -o json 2>&1
     
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "  WARNING: Failed to retrieve locations for subscription '$($subscription.name)'" -ForegroundColor Yellow
+        Write-Host "  WARNING: Failed to query location details via REST API" -ForegroundColor Yellow
         Write-Host "  Skipping this subscription..." -ForegroundColor Yellow
         continue
     }
     
-    $locations = $locationsJson | ConvertFrom-Json
+    $locationDetails = $locationDetailsJson | ConvertFrom-Json
     
-    if ($null -eq $locations -or $locations.Count -eq 0) {
-        Write-Host "  WARNING: No locations found for subscription '$($subscription.name)'" -ForegroundColor Yellow
+    if ($null -eq $locationDetails.value -or $locationDetails.value.Count -eq 0) {
+        Write-Host "  WARNING: No location details found for subscription '$($subscription.name)'" -ForegroundColor Yellow
         continue
     }
     
     # Flag to track if we found zone mappings
     $foundMappings = $false
     
-    # Try each location until we find one with availabilityZoneMappings
-    foreach ($location in $locations) {
-        # Query the location details via REST API to get availability zone mappings
-        $locationDetailsJson = az rest --method get --url "https://management.azure.com/subscriptions/$($subscription.id)/locations?api-version=2022-12-01" -o json 2>&1
-        
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "  WARNING: Failed to query location details via REST API" -ForegroundColor Yellow
-            break
-        }
-        
-        $locationDetails = $locationDetailsJson | ConvertFrom-Json
-        
-        # Look for the first location with availabilityZoneMappings
-        foreach ($locationDetail in $locationDetails.value) {
-            if ($null -ne $locationDetail.availabilityZoneMappings -and $locationDetail.availabilityZoneMappings.Count -gt 0) {
-                $foundMappings = $true
-                $regionName = $locationDetail.name
-                $regionDisplayName = $locationDetail.displayName
+    # Look for the first location with availabilityZoneMappings
+    foreach ($locationDetail in $locationDetails.value) {
+        if ($null -ne $locationDetail.availabilityZoneMappings -and $locationDetail.availabilityZoneMappings.Count -gt 0) {
+            $foundMappings = $true
+            $regionName = $locationDetail.name
+            $regionDisplayName = $locationDetail.displayName
+            
+            Write-Host "  Found zone mappings in region: $regionDisplayName ($regionName)" -ForegroundColor Green
+            Write-Host ""
+            Write-Host "  Physical Zone -> Logical Zone Mappings:" -ForegroundColor White
+            
+            # Extract and display each physical-to-logical zone mapping
+            foreach ($mapping in $locationDetail.availabilityZoneMappings) {
+                $physicalZone = $mapping.physicalZone
+                $logicalZone = $mapping.logicalZone
                 
-                Write-Host "  Found zone mappings in region: $regionDisplayName ($regionName)" -ForegroundColor Green
-                Write-Host ""
-                Write-Host "  Physical Zone -> Logical Zone Mappings:" -ForegroundColor White
+                # Display the mapping
+                Write-Host "    Physical Zone: $physicalZone -> Logical Zone: $logicalZone" -ForegroundColor White
                 
-                # Extract and display each physical-to-logical zone mapping
-                foreach ($mapping in $locationDetail.availabilityZoneMappings) {
-                    $physicalZone = $mapping.physicalZone
-                    $logicalZone = $mapping.logicalZone
-                    
-                    # Display the mapping
-                    Write-Host "    Physical Zone: $physicalZone -> Logical Zone: $logicalZone" -ForegroundColor White
-                    
-                    # Add to results array for CSV export
-                    $results += [PSCustomObject]@{
-                        SubscriptionId   = $subscription.id
-                        SubscriptionName = $subscription.name
-                        Region           = $regionName
-                        RegionDisplayName = $regionDisplayName
-                        PhysicalZone     = $physicalZone
-                        LogicalZone      = $logicalZone
-                    }
+                # Add to results array for CSV export
+                $results += [PSCustomObject]@{
+                    SubscriptionId   = $subscription.id
+                    SubscriptionName = $subscription.name
+                    Region           = $regionName
+                    RegionDisplayName = $regionDisplayName
+                    PhysicalZone     = $physicalZone
+                    LogicalZone      = $logicalZone
                 }
-                
-                Write-Host ""
-                # Only process the first region with mappings
-                break
             }
-        }
-        
-        # If we found mappings, stop checking other locations
-        if ($foundMappings) {
+            
+            Write-Host ""
+            # Only process the first region with mappings
             break
         }
     }
