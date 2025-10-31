@@ -101,15 +101,14 @@ function Get-SubscriptionZoneMappings {
                     
                     Write-ColorOutput "    Found zone mappings in region: $locationName" "Green"
                     
-                    # Extract zone mapping pairs
-                    $zoneMappings = @()
-                    foreach ($mapping in $locationDetails.availabilityZoneMappings) {
-                        $zoneMappings += [PSCustomObject]@{
+                    # Extract zone mapping pairs using more efficient collection
+                    $zoneMappings = $locationDetails.availabilityZoneMappings | ForEach-Object {
+                        [PSCustomObject]@{
                             SubscriptionId   = $SubscriptionId
                             SubscriptionName = $SubscriptionName
                             Region           = $locationName
-                            LogicalZone      = $mapping.logicalZone
-                            PhysicalZone     = $mapping.physicalZone
+                            LogicalZone      = $_.logicalZone
+                            PhysicalZone     = $_.physicalZone
                         }
                     }
                     
@@ -183,13 +182,14 @@ try {
     
     # Collect all zone mappings from all subscriptions
     # For each subscription, we identify the FIRST region with zone mappings
-    $allZoneMappings = @()
+    # Using ArrayList for better performance when collecting from multiple subscriptions
+    $allZoneMappings = [System.Collections.ArrayList]::new()
     
     foreach ($subscription in $subscriptions) {
         $mappings = Get-SubscriptionZoneMappings -SubscriptionId $subscription.id -SubscriptionName $subscription.name
         
         if ($mappings) {
-            $allZoneMappings += $mappings
+            $null = $allZoneMappings.AddRange($mappings)
         }
     }
     
@@ -210,9 +210,11 @@ try {
         $allZoneMappings | Export-Csv -Path $OutputPath -NoTypeInformation -Encoding UTF8
         Write-ColorOutput "Results exported to: $OutputPath" "Green"
         
-        # Display the absolute path
-        $absolutePath = (Resolve-Path -Path $OutputPath).Path
-        Write-ColorOutput "Absolute path: $absolutePath" "Green"
+        # Display the absolute path safely
+        if (Test-Path -Path $OutputPath) {
+            $absolutePath = (Resolve-Path -Path $OutputPath).Path
+            Write-ColorOutput "Absolute path: $absolutePath" "Green"
+        }
     }
     
     Write-ColorOutput "`n=== Discovery Complete ===" "Magenta"
