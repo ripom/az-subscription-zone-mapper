@@ -1,0 +1,22 @@
+# Output files
+zone-mappings.csv
+*.csv
+
+# PowerShell module artifacts
+*.psm1
+*.psd1
+
+# Temporary files
+*.tmp
+*.log
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
