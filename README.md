@@ -1,10 +1,10 @@
 # az-subscription-zone-mapper
 
-Discovers Azure availability zone mappings across all subscriptions in the current tenant. Queries the first region with zone data, extracts physical-to-logical zone pairs, and exports results to CSV for audit, planning, or compliance.
+Discovers Azure availability zone mappings across all subscriptions or a specific subscription in the current tenant. Queries the first region with zone data, extracts physical-to-logical zone pairs, and optionally exports results to CSV for audit, planning, or compliance.
 
 ## Overview
 
-This PowerShell script automates the discovery of Azure availability zone mappings across all subscriptions in your current tenant. It extracts the physical-to-logical zone pairs, and exports the data to a CSV file for analysis.
+This PowerShell script automates the discovery of Azure availability zone mappings for subscriptions in your current tenant. It extracts the physical-to-logical zone pairs and can either display them on screen or export to a CSV file for analysis.
 
 ## Prerequisites
 
@@ -14,27 +14,41 @@ This PowerShell script automates the discovery of Azure availability zone mappin
 
 ## Features
 
-- Iterates through all Azure subscriptions in the current tenant
+- Processes all Azure subscriptions in the current tenant or a specific subscription
 - Filters subscriptions by the current tenant ID
 - Queries Azure REST API for location metadata
 - Identifies regions with `availabilityZoneMappings`
 - Extracts physical-to-logical zone pairs
-- Exports results to CSV format
+- Optional CSV export or screen-only display
+- Progress bar for multi-subscription processing
+- Color-coded console output
 
 ## Usage
 
-### Basic Usage
+### Display Results for All Subscriptions (Screen Only)
 
 ```powershell
 ./Get-AzZoneMappings.ps1
 ```
 
-This will create a `zone-mappings.csv` file in the current directory.
+Results are displayed in the console without creating a file.
 
-### Custom Output Path
+### Display Results for a Specific Subscription
 
 ```powershell
-./Get-AzZoneMappings.ps1 -OutputPath "C:\output\my-mappings.csv"
+./Get-AzZoneMappings.ps1 -SubscriptionId "12345678-1234-1234-1234-123456789012"
+```
+
+### Export All Subscriptions to CSV
+
+```powershell
+./Get-AzZoneMappings.ps1 -OutputPath "zone-mappings.csv"
+```
+
+### Export Specific Subscription to CSV
+
+```powershell
+./Get-AzZoneMappings.ps1 -SubscriptionId "12345678-1234-1234-1234-123456789012" -OutputPath "my-zones.csv"
 ```
 
 ### Help
@@ -43,22 +57,43 @@ This will create a `zone-mappings.csv` file in the current directory.
 Get-Help ./Get-AzZoneMappings.ps1 -Full
 ```
 
+## Parameters
+
+- **`-SubscriptionId`** (Optional): Azure subscription ID. If provided, only that subscription is processed. If omitted, all subscriptions in the current tenant are processed.
+- **`-OutputPath`** (Optional): Path to export results as a CSV file. If omitted, results are only displayed on screen.
+
 ## Output Format
+
+### Console Output
+
+Results are displayed in the console with color-coded sections:
+
+```
+=== Reading current Tenant ID ===
+=== Gathering the Subscription IDs filtered by Current Tenant ID ===
+Generating result for Zone Mappings
+Subscription, SubscriptionID, Physical Zone, Logical Zone
+Production, 12345678-1234-1234-1234-123456789abc, 1, 2
+Production, 12345678-1234-1234-1234-123456789abc, 2, 3
+Production, 12345678-1234-1234-1234-123456789abc, 3, 1
+```
+
+### CSV Output (When OutputPath is Specified)
 
 The CSV file contains the following columns:
 
-- **SubscriptionId**: Azure subscription ID
 - **Subscription**: Friendly name of the subscription
-- **Logical Zone**: Logical zone number (subscription-specific)
-- **Physical Zone**: Physical zone identifier (datacenter-specific)
+- **SubscriptionId**: Azure subscription ID
+- **PhysicalZone**: Physical zone identifier (datacenter-specific)
+- **LogicalZone**: Logical zone number (subscription-specific)
 
 ## Example Output
 
 ```
 Subscription, SubscriptionID, Physical Zone, Logical Zone
-Production,12345678-1234-1234-1234-123456789abc,az1,2
-Production,12345678-1234-1234-1234-123456789abc,az2,3
-Production,12345678-1234-1234-1234-123456789abc,az3,1
+Production,12345678-1234-1234-1234-123456789abc,1,2
+Production,12345678-1234-1234-1234-123456789abc,2,3
+Production,12345678-1234-1234-1234-123456789abc,3,1
 ```
 
 ## Error Handling
@@ -66,9 +101,11 @@ Production,12345678-1234-1234-1234-123456789abc,az3,1
 The script includes comprehensive error handling:
 
 - Validates Azure CLI authentication
+- Verifies subscription ID exists in the current tenant (when specified)
 - Checks for empty or malformed JSON responses
 - Continues processing other subscriptions if one fails
 - Displays warnings for subscriptions without zone mappings
+- Color-coded error messages for better visibility
 - Exits with error code 1 on critical failures
 
 ## Technical Details
@@ -97,6 +134,10 @@ Run `az login` to authenticate with Azure.
 ### "No subscriptions found in the current tenant"
 
 Ensure you have access to at least one subscription in the current tenant. Check with `az account list`.
+
+### "Error: Subscription ID 'xxx' not found in the current tenant"
+
+The specified subscription ID either doesn't exist or is not accessible in your current tenant. Verify the subscription ID and ensure you have access to it.
 
 ### "No zone mappings found in any subscription"
 

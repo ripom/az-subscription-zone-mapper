@@ -1,11 +1,26 @@
 <#
 .SYNOPSIS
-    Extracts Azure availability zone mappings from all subscriptions in the current tenant.
+    Extracts Azure availability zone mappings from all subscriptions or a specific subscription in the current tenant.
 
 .DESCRIPTION
     This script filters subscriptions by the current tenant ID, queries the first region with 
     availabilityZoneMappings, extracts physical-to-logical zone relationships, and exports 
     the results to a CSV file. Includes progress bar and color-coded output.
+
+.PARAMETER SubscriptionId
+    Optional. If provided, process only the specified subscription ID. 
+    If not provided, process all subscriptions in the current tenant.
+
+.PARAMETER OutputPath
+    Optional. Path to the output CSV file. If not provided, results will only be displayed on screen.
+
+.EXAMPLE
+    .\Get-AzZoneMappings.ps1
+    Process all subscriptions in the current tenant.
+
+.EXAMPLE
+    .\Get-AzZoneMappings.ps1 -SubscriptionId "12345678-1234-1234-1234-123456789012"
+    Process only the specified subscription.
 
 .NOTES
     Requires Azure CLI and REST API access.
@@ -14,21 +29,39 @@
 [CmdletBinding()]
 param(
     [Parameter()]
-    [string]$OutputPath = "zone-mappings.csv"
+    [string]$SubscriptionId,
+
+    [Parameter()]
+    [string]$OutputPath
 )
 
 # Step 1: Get current tenant ID
-Write-ColorOutput "`n=== Reading current Tenant ID ===" "Magenta"
+Write-Host "`n=== Reading current Tenant ID ===" -ForegroundColor Magenta
 $currentTenantId = (az account show --output json | ConvertFrom-Json).tenantId
 
 # Step 2: Get subscriptions for the current tenant only
-Write-ColorOutput "`n=== Gathering the Subscription IDs filtered by Current Tenant ID ===" "Magenta"
-$subscriptions = az account list --output json `
-    --query "[?tenantId=='$currentTenantId']" | ConvertFrom-Json
+Write-Host "`n=== Gathering the Subscription IDs filtered by Current Tenant ID ===" -ForegroundColor Magenta
+
+if ($SubscriptionId) {
+    # Process only the specified subscription
+    $allSubscriptions = az account list --output json `
+        --query "[?tenantId=='$currentTenantId']" | ConvertFrom-Json
+    
+    $subscriptions = $allSubscriptions | Where-Object { $_.id -eq $SubscriptionId }
+    
+    if ($subscriptions.Count -eq 0) {
+        Write-Host "Error: Subscription ID '$SubscriptionId' not found in the current tenant." -ForegroundColor Red
+        exit 1
+    }
+} else {
+    # Process all subscriptions
+    $subscriptions = az account list --output json `
+        --query "[?tenantId=='$currentTenantId']" | ConvertFrom-Json
+}
 
 # Prepare an array to collect output
 $zoneMappings = @()
-Write-ColorOutput "Generating result for Zone Mappings" "Cyan"
+Write-Host "Generating result for Zone Mappings" -ForegroundColor Cyan
 Write-Host "Subscription, SubscriptionID, Physical Zone, Logical Zone"
 
 $total = $subscriptions.Count
@@ -85,6 +118,10 @@ foreach ($sub in $subscriptions) {
     }
 }
 
-# Step 6: Export to CSV
-$zoneMappings | Export-Csv -Path "./$OutputPath" -NoTypeInformation -Encoding UTF8
-Write-ColorOutput "Results exported to: $OutputPath" "Green"
+# Step 6: Export to CSV if OutputPath is provided
+if ($OutputPath) {
+    $zoneMappings | Export-Csv -Path "./$OutputPath" -NoTypeInformation -Encoding UTF8
+    Write-Host "Results exported to: $OutputPath" -ForegroundColor Green
+} else {
+    Write-Host "`nResults displayed above (no file export requested)" -ForegroundColor Yellow
+}
