@@ -1,148 +1,239 @@
-# az-subscription-zone-mapper
+# Azure Subscription Zone Mapper
 
-Discovers Azure availability zone mappings across all subscriptions or a specific subscription in the current tenant. Queries the first region with zone data, extracts physical-to-logical zone pairs, and optionally exports results to CSV for audit, planning, or compliance.
+A comprehensive PowerShell toolkit for discovering and analyzing Azure availability zone mappings and VM distributions across subscriptions and tenants.
 
 ## Overview
 
-This PowerShell script automates the discovery of Azure availability zone mappings for subscriptions in your current tenant. It extracts the physical-to-logical zone pairs and can either display them on screen or export to a CSV file for analysis.
+This repository contains two powerful PowerShell scripts designed to help Azure administrators understand and analyze availability zone configurations:
+
+### 🗺️ Get-AzZoneMappings.ps1
+Discovers physical-to-logical availability zone mappings for Azure subscriptions. Essential for understanding how Azure's logical zones (1, 2, 3) map to physical datacenter zones (az1, az2, az3) in your subscriptions.
+
+**Returns PowerShell objects by default** - Enables pipeline integration and flexible data manipulation. Optionally exports to CSV.
+
+### 📊 Get-AzVMZoneDistribution.ps1
+Analyzes VM distribution across availability zones in your Azure environment. Generates comprehensive reports (HTML or console) showing which VMs are deployed in which physical zones, helping identify imbalances and plan for high availability.
+
+---
+
+> **⚠️ Breaking Change in v2.1:** Get-AzZoneMappings.ps1 now requires **Azure PowerShell module** instead of Azure CLI. If upgrading from v1.0/v2.0, uninstall Azure CLI dependency and use `Connect-AzAccount` instead of `az login`.
+
+## Key Features
+
+- **Multi-tenant support** - Select from multiple Azure tenants
+- **Flexible scope** - Scan all subscriptions or target specific ones
+- **Physical zone mapping** - Understand actual datacenter zone assignments
+- **VM distribution analysis** - Identify zone imbalances and HA gaps
+- **Rich reporting** - HTML reports with charts or console output
+- **Progress tracking** - Real-time progress bars for long-running operations
 
 ## Prerequisites
 
-- **Azure CLI** (`az`) must be installed and available in your PATH
-- **PowerShell Core** (pwsh) or Windows PowerShell
-- Active Azure authentication (run `az login` before executing the script)
+**Both scripts require:**
+- **Azure PowerShell module** (`Az`) installed: `Install-Module -Name Az -Repository PSGallery -Force`
+- **PowerShell** 5.1 or later (PowerShell 7+ recommended)  
+- Active Azure authentication: `Connect-AzAccount`
 
-## Features
+## Quick Start
 
-- Processes all Azure subscriptions in the current tenant or a specific subscription
-- Filters subscriptions by the current tenant ID
-- Queries Azure REST API for location metadata
-- Identifies regions with `availabilityZoneMappings`
-- Extracts physical-to-logical zone pairs
-- Optional CSV export or screen-only display
-- Progress bar for multi-subscription processing
-- Color-coded console output
-
-## Usage
-
-### Display Results for All Subscriptions (Screen Only)
+### 1️⃣ Get Zone Mappings
 
 ```powershell
-./Get-AzZoneMappings.ps1
+# Authenticate with Azure PowerShell
+Connect-AzAccount
+
+# Get zone mappings for all subscriptions (returns PowerShell objects)
+$zones = .\Get-AzZoneMappings.ps1
+
+# Get zone mappings for specific subscription
+$zones = .\Get-AzZoneMappings.ps1 -SubscriptionId "12345678-1234-1234-1234-123456789012"
+
+# Export to CSV
+.\Get-AzZoneMappings.ps1 -OutputPath "zones.csv"
 ```
 
-Results are displayed in the console without creating a file.
-
-### Display Results for a Specific Subscription
+### 2️⃣ Analyze VM Distribution
 
 ```powershell
-./Get-AzZoneMappings.ps1 -SubscriptionId "12345678-1234-1234-1234-123456789012"
+# Authenticate with Azure PowerShell
+Connect-AzAccount
+
+# Interactive tenant selection + console summary
+.\Get-AzVMZoneDistribution.ps1
+
+# Specific tenant + HTML report
+.\Get-AzVMZoneDistribution.ps1 -TenantId "12345678-1234-1234-1234-123456789012" -OutputPath "report.html"
+
+# Specific subscription only
+.\Get-AzVMZoneDistribution.ps1 -SubscriptionId "12345678-1234-1234-1234-123456789012"
 ```
 
-### Export All Subscriptions to CSV
+## Understanding Zone Mappings
+
+### Why Zone Mappings Matter
+
+Azure uses **logical zones** (1, 2, 3) in each subscription, but these map to different **physical zones** (az1, az2, az3) in the datacenter. This means:
+
+- Logical Zone 1 in Subscription A might be Physical Zone az1
+- Logical Zone 1 in Subscription B might be Physical Zone az3
+
+**This is critical for:**
+- Cross-subscription high availability planning
+- Disaster recovery strategies
+- Understanding actual physical separation of resources
+- Compliance and regulatory requirements
+
+### Example Mapping
+
+| Subscription | Logical Zone | Physical Zone |
+|-------------|--------------|---------------|
+| Production  | 1            | az3           |
+| Production  | 2            | az1           |
+| Production  | 3            | az2           |
+| Development | 1            | az1           |
+| Development | 2            | az2           |
+| Development | 3            | az3           |
+
+In this example, VMs in Logical Zone 1 are in **different physical zones** across subscriptions!
+
+## Documentation
+
+For detailed information about each script:
+
+- 📖 **[Get-AzZoneMappings.md](README-Get-AzZoneMappings.md)** - Zone mapping discovery
+- 📖 **[Get-AzVMZoneDistribution.md](README-Get-AzVMZoneDistribution.md)** - VM distribution analysis
+
+## Use Cases
+
+### High Availability Planning
+- Verify VMs in different logical zones are actually in different physical zones
+- Identify zone imbalances in VM distributions
+- Plan Azure Site Recovery configurations
+
+### Compliance & Auditing  
+- Document physical zone assignments for compliance reports
+- Verify infrastructure meets regulatory requirements for physical separation
+- Generate audit trails of zone configurations
+
+### Capacity Planning
+- Understand zone distribution before adding new workloads
+- Identify zones with capacity constraints
+- Plan migrations with zone considerations
+
+### Multi-Subscription Environments
+- Map zone relationships across subscription boundaries
+- Coordinate deployments across multiple subscriptions
+- Understand tenant-wide zone utilization
+
+## Repository Structure
+
+```
+az-subscription-zone-mapper/
+├── Get-AzZoneMappings.ps1           # Zone mapping discovery script
+├── Get-AzVMZoneDistribution.ps1     # VM distribution analysis script
+├── README.md                         # This file
+├── README-Get-AzZoneMappings.md     # Detailed docs for zone mapping
+└── README-Get-AzVMZoneDistribution.md # Detailed docs for VM analysis
+```
+
+## Integration Examples
+
+### Pipeline Integration
 
 ```powershell
-./Get-AzZoneMappings.ps1 -OutputPath "zone-mappings.csv"
+# Get zone mappings and filter by physical zone
+$zones = .\Get-AzZoneMappings.ps1 | Where-Object { $_.PhysicalZone -eq 'az1' }
+
+# Group by subscription to see zone distribution
+$allZones = .\Get-AzZoneMappings.ps1
+$allZones | Group-Object Subscription | Format-Table Name, Count -AutoSize
+
+# Create lookup hashtable for automation
+$zoneLookup = @{}
+foreach ($zone in $allZones) {
+    $key = "$($zone.SubscriptionId)-$($zone.LogicalZone)"
+    $zoneLookup[$key] = $zone.PhysicalZone
+}
 ```
 
-### Export Specific Subscription to CSV
+### Scheduled Reporting
 
 ```powershell
-./Get-AzZoneMappings.ps1 -SubscriptionId "12345678-1234-1234-1234-123456789012" -OutputPath "my-zones.csv"
-```
-
-### Help
-
-```powershell
-Get-Help ./Get-AzZoneMappings.ps1 -Full
-```
-
-## Parameters
-
-- **`-SubscriptionId`** (Optional): Azure subscription ID. If provided, only that subscription is processed. If omitted, all subscriptions in the current tenant are processed.
-- **`-OutputPath`** (Optional): Path to export results as a CSV file. If omitted, results are only displayed on screen.
-
-## Output Format
-
-### Console Output
-
-Results are displayed in the console with color-coded sections:
-
-```
-=== Reading current Tenant ID ===
-=== Gathering the Subscription IDs filtered by Current Tenant ID ===
-Generating result for Zone Mappings
-Subscription, SubscriptionID, Physical Zone, Logical Zone
-Production, 12345678-1234-1234-1234-123456789abc, 1, 2
-Production, 12345678-1234-1234-1234-123456789abc, 2, 3
-Production, 12345678-1234-1234-1234-123456789abc, 3, 1
-```
-
-### CSV Output (When OutputPath is Specified)
-
-The CSV file contains the following columns:
-
-- **Subscription**: Friendly name of the subscription
-- **SubscriptionId**: Azure subscription ID
-- **PhysicalZone**: Physical zone identifier (datacenter-specific)
-- **LogicalZone**: Logical zone number (subscription-specific)
-
-## Example Output
-
-```
-Subscription, SubscriptionID, Physical Zone, Logical Zone
-Production,12345678-1234-1234-1234-123456789abc,1,2
-Production,12345678-1234-1234-1234-123456789abc,2,3
-Production,12345678-1234-1234-1234-123456789abc,3,1
-```
-
-## Error Handling
-
-The script includes comprehensive error handling:
-
-- Validates Azure CLI authentication
-- Verifies subscription ID exists in the current tenant (when specified)
-- Checks for empty or malformed JSON responses
-- Continues processing other subscriptions if one fails
-- Displays warnings for subscriptions without zone mappings
-- Color-coded error messages for better visibility
-- Exits with error code 1 on critical failures
-
-## Technical Details
-
-### Azure CLI Commands Used
-
-- `az account show`: Retrieves current account and tenant information
-- `az account list`: Lists all subscriptions
-- `az account set`: Sets the active subscription context
-- `az rest`: Makes authenticated REST API calls to Azure Resource Manager
-
-### Azure REST API
-
-The script uses the Azure Resource Manager REST API to query location metadata:
-
-```
-GET https://management.azure.com/subscriptions/{subscriptionId}/locations/{locationName}?api-version=2022-12-01
+# Weekly VM distribution report
+$date = Get-Date -Format "yyyy-MM-dd"
+.\Get-AzVMZoneDistribution.ps1 -TenantId $tenantId -OutputPath "VM-Report-$date.html"
 ```
 
 ## Troubleshooting
 
-### "Failed to get current account information"
+### Get-AzZoneMappings.ps1
 
-Run `az login` to authenticate with Azure.
+**"Error: Subscription ID 'xxx' not found in the current tenant"**
+- Run `Get-AzSubscription` to see available subscriptions
+- Verify you're authenticated: `Connect-AzAccount`
+- Check tenant context: `Get-AzContext`
 
-### "No subscriptions found in the current tenant"
+### Get-AzVMZoneDistribution.ps1
 
-Ensure you have access to at least one subscription in the current tenant. Check with `az account list`.
+**"Not connected to Azure. Please run 'Connect-AzAccount' first"**
+- Authenticate with Azure PowerShell: `Connect-AzAccount`
+- Verify connection: `Get-AzContext`
 
-### "Error: Subscription ID 'xxx' not found in the current tenant"
+**"No VMs found" but VMs exist**
+- Ensure you have Reader permissions on subscriptions
+- Check if VMs are in the selected subscription: `Get-AzVM`
 
-The specified subscription ID either doesn't exist or is not accessible in your current tenant. Verify the subscription ID and ensure you have access to it.
+**"Warning: Get-AzZoneMappings.ps1 not found"**
+- Ensure both scripts are in the same directory
+- Get-AzVMZoneDistribution.ps1 depends on Get-AzZoneMappings.ps1
 
-### "No zone mappings found in any subscription"
+### General Issues
 
-Not all Azure regions support availability zones. The script will only find mappings in regions that support this feature.
+**Slow performance**
+- Zone mapping queries can take time for subscriptions with many regions
+- VM scanning is slower with many VMs and subscriptions
+- Consider using `-SubscriptionId` to target specific subscriptions
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit issues or pull requests.
+
+## Changelog
+
+### Version 2.1 (Current)
+- **BREAKING CHANGE**: Get-AzZoneMappings.ps1 now uses Azure PowerShell module instead of Azure CLI
+  - Replaced `az` commands with `Az` PowerShell cmdlets (`Invoke-AzRestMethod`, `Get-AzSubscription`, etc.)
+  - Authentication changed from `az login` to `Connect-AzAccount`
+  - Unified authentication across both scripts - only Azure PowerShell module required
+  - No more dependency on Azure CLI installation
+- Updated all documentation to reflect PowerShell module usage
+- Improved error handling with Azure connection validation
+
+### Version 2.0
+- Added Get-AzVMZoneDistribution.ps1 for VM analysis
+- HTML report generation with interactive charts
+- Multi-tenant support with interactive selection
+- PowerShell Az module integration for VM script
+- Color-coded console output and HTML reports
+- Optional parameters for flexible execution
+
+### Version 1.0
+- Initial Get-AzZoneMappings.ps1 release (using Azure CLI)
+- Basic zone mapping discovery
+- CSV export functionality
 
 ## License
 
 MIT License - feel free to use and modify as needed.
+
+## Support
+
+For issues, questions, or contributions:
+- 📝 [Open an issue](https://github.com/ripom/az-subscription-zone-mapper/issues)
+- 💬 [Start a discussion](https://github.com/ripom/az-subscription-zone-mapper/discussions)
+
+## Related Resources
+
+- [Azure Availability Zones Documentation](https://learn.microsoft.com/en-us/azure/reliability/availability-zones-overview)
+- [Azure PowerShell Documentation](https://learn.microsoft.com/en-us/powershell/azure/)
+- [Azure CLI Documentation](https://learn.microsoft.com/en-us/cli/azure/)
