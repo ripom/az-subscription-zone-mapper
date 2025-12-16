@@ -12,7 +12,9 @@ Discovers physical-to-logical availability zone mappings for Azure subscriptions
 **Returns PowerShell objects by default** - Enables pipeline integration and flexible data manipulation. Optionally exports to CSV.
 
 ### 📊 Get-AzVMZoneDistribution.ps1
-Analyzes VM distribution across availability zones in your Azure environment. Generates comprehensive reports (HTML or console) showing which VMs are deployed in which physical zones, helping identify imbalances and plan for high availability.
+Analyzes VM distribution across availability zones in your Azure environment. Generates comprehensive reports (HTML or console) showing which VMs are deployed in which physical zones, availability set assignments, and infrastructure protection levels - helping identify configuration gaps and plan for resilience.
+
+**Features comprehensive protection analysis** - Assesses each VM's infrastructure protection configuration (Zone-Isolated/Availability Set/No Protection) with color-coded status indicators. Supports CSV export for further analysis.
 
 ---
 
@@ -23,8 +25,10 @@ Analyzes VM distribution across availability zones in your Azure environment. Ge
 - **Multi-tenant support** - Select from multiple Azure tenants
 - **Flexible scope** - Scan all subscriptions or target specific ones
 - **Physical zone mapping** - Understand actual datacenter zone assignments
-- **VM distribution analysis** - Identify zone imbalances and HA gaps
-- **Rich reporting** - HTML reports with charts or console output
+- **VM distribution analysis** - Identify zone imbalances and protection gaps
+- **Infrastructure protection assessment** - Analyze availability zones, availability sets, and unprotected VMs
+- **Rich reporting** - HTML reports with charts and color-coded tables or console output
+- **CSV export** - Export VM details to CSV for further analysis or integration
 - **Progress tracking** - Real-time progress bars for long-running operations
 
 ## Prerequisites
@@ -66,6 +70,10 @@ Connect-AzAccount
 
 # Specific subscription only
 .\Get-AzVMZoneDistribution.ps1 -SubscriptionId "12345678-1234-1234-1234-123456789012"
+
+# Export VM details to CSV
+.\Get-AzVMZoneDistribution.ps1 -OutputPath "report.html" -ExportCSV "vm-details.csv"
+# Creates: report.html and vm-details.csv
 ```
 
 ## Understanding Zone Mappings
@@ -200,12 +208,27 @@ Contributions are welcome! Please feel free to submit issues or pull requests.
 
 ## Changelog
 
-### Version 2.1 (Current)
+### Version 2.2 (Current)
+- **NEW**: Added `-ExportCSV` parameter to Get-AzVMZoneDistribution.ps1
+  - Export VM details table to CSV format
+  - Requires explicit CSV file path
+  - Works with or without HTML report generation
+  - Includes all VM details: Name, Subscription, Resource Group, Location, Zones, Protection Level, Size, Power State
+  - Perfect for integration with Excel, PowerBI, or custom analysis scripts
+- Updated documentation with CSV export examples
+
+### Version 2.1
 - **BREAKING CHANGE**: Get-AzZoneMappings.ps1 now uses Azure PowerShell module instead of Azure CLI
   - Replaced `az` commands with `Az` PowerShell cmdlets (`Invoke-AzRestMethod`, `Get-AzSubscription`, etc.)
   - Authentication changed from `az login` to `Connect-AzAccount`
   - Unified authentication across both scripts - only Azure PowerShell module required
   - No more dependency on Azure CLI installation
+- **NEW**: Get-AzVMZoneDistribution.ps1 now includes Infrastructure Protection analysis
+  - Detects availability set assignments for VMs
+  - Assesses protection level for each VM (Zone-Isolated/Availability Set/No Protection)
+  - Color-coded HTML reports: Green (Zone-Isolated), Blue (Availability Set), Red (No Protection)
+  - Enhanced summary metrics with protection statistics
+  - Includes educational info box explaining protection levels vs High Availability
 - Updated all documentation to reflect PowerShell module usage
 - Improved error handling with Azure connection validation
 

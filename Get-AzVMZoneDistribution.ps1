@@ -4,8 +4,9 @@
 
 .DESCRIPTION
     Lists all accessible Azure tenants, prompts for selection, scans all subscriptions in the 
-    selected tenant for deployed VMs, maps them to physical zones, and generates an HTML report 
-    with tables, summaries, and charts showing zone distribution.
+    selected tenant for deployed VMs, maps them to physical zones, checks availability sets,
+    and generates an HTML report with tables, summaries, and charts showing zone distribution
+    and VM infrastructure protection configuration.
 
 .PARAMETER TenantId
     Optional. Specific tenant ID to connect to. If not provided, will prompt for tenant selection.
@@ -15,6 +16,9 @@
 
 .PARAMETER OutputPath
     Optional. Path to the output HTML file. If not provided, results will be displayed as a summary on console.
+
+.PARAMETER ExportCSV
+    Optional. Path to export VM details table to CSV file. When specified, exports all VM data to the provided CSV file path.
 
 .EXAMPLE
     .\Get-AzVMZoneDistribution.ps1
@@ -36,6 +40,14 @@
     .\Get-AzVMZoneDistribution.ps1 -SubscriptionId "12345678-1234-1234-1234-123456789012" -OutputPath "report.html"
     Generate HTML report for a specific subscription.
 
+.EXAMPLE
+    .\Get-AzVMZoneDistribution.ps1 -OutputPath "report.html" -ExportCSV "vm-details.csv"
+    Generate HTML report and export VM details to CSV file.
+
+.EXAMPLE
+    .\Get-AzVMZoneDistribution.ps1 -ExportCSV "vm-zone-distribution.csv"
+    Generate console summary and export VM details to CSV file.
+
 .NOTES
     Requires Azure PowerShell module (Az).
 #>
@@ -49,7 +61,10 @@ param(
     [string]$SubscriptionId,
     
     [Parameter()]
-    [string]$OutputPath
+    [string]$OutputPath,
+    
+    [Parameter()]
+    [string]$ExportCSV
 )
 
 #region Helper Functions
@@ -194,15 +209,25 @@ function Get-HTMLTemplate {
     foreach ($vm in $VMData) {
         $rowClass = ""
         $powerStateClass = ""
+        $protectionClass = ""
         
         # Add class for running VMs (green)
         if ($vm.PowerState -like "*running*") {
             $powerStateClass = "vm-running"
         }
         
-        # Add class for VMs without zones (yellow row)
+        # Add class for VMs without zones
         if ($vm.LogicalZone -eq "No Zone") {
             $rowClass = "no-zone"
+        }
+        
+        # Add class for protection level
+        if ($vm.ProtectionLevel -eq "No Protection") {
+            $protectionClass = "no-protection"
+        } elseif ($vm.ProtectionLevel -like "Zone*") {
+            $protectionClass = "zone-protected"
+        } elseif ($vm.ProtectionLevel -like "Avail*") {
+            $protectionClass = "availset-protected"
         }
         
         $tableRows += @"
@@ -213,6 +238,8 @@ function Get-HTMLTemplate {
                 <td>$($vm.Location)</td>
                 <td>$($vm.LogicalZone)</td>
                 <td>$($vm.PhysicalZone)</td>
+                <td>$($vm.AvailabilitySet)</td>
+                <td class="$protectionClass">$($vm.ProtectionLevel)</td>
                 <td>$($vm.VMSize)</td>
                 <td class="$powerStateClass">$($vm.PowerState)</td>
             </tr>
@@ -258,7 +285,7 @@ function Get-HTMLTemplate {
             min-height: 100vh;
         }
         .container {
-            max-width: 1400px;
+            max-width: 1600px;
             margin: 0 auto;
             background: white;
             border-radius: 10px;
@@ -284,8 +311,8 @@ function Get-HTMLTemplate {
         }
         .summary {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 15px;
             margin-bottom: 30px;
         }
         .summary-card {
@@ -296,7 +323,7 @@ function Get-HTMLTemplate {
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }
         .summary-card h3 {
-            font-size: 0.9em;
+            font-size: 0.85em;
             opacity: 0.9;
             margin-bottom: 10px;
             text-transform: uppercase;
@@ -321,19 +348,20 @@ function Get-HTMLTemplate {
             border-collapse: collapse;
             margin-top: 20px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            font-size: 0.9em;
         }
         th {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            padding: 15px;
+            padding: 12px 10px;
             text-align: left;
             font-weight: 600;
             text-transform: uppercase;
-            font-size: 0.85em;
+            font-size: 0.8em;
             letter-spacing: 0.5px;
         }
         td {
-            padding: 12px 15px;
+            padding: 10px;
             border-bottom: 1px solid #e0e0e0;
         }
         tr:hover {
@@ -353,11 +381,70 @@ function Get-HTMLTemplate {
             font-weight: 600;
             color: #2e7d32;
         }
+        td.zone-protected {
+            background-color: #c8e6c9;
+            font-weight: 600;
+            color: #2e7d32;
+        }
+        td.availset-protected {
+            background-color: #b3e5fc;
+            font-weight: 600;
+            color: #01579b;
+        }
+        td.no-protection {
+            background-color: #ffccbc;
+            font-weight: 600;
+            color: #bf360c;
+        }
         .chart-container {
             position: relative;
             height: 400px;
             margin: 30px auto;
             max-width: 800px;
+        }
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            margin: 20px 0;
+            padding: 15px;
+            background: #f5f5f5;
+            border-radius: 8px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 3px;
+        }
+        .info-box {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 15px 20px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .info-box h4 {
+            color: #1976d2;
+            margin: 0 0 10px 0;
+            font-size: 1em;
+        }
+        .info-box ul {
+            margin: 10px 0 10px 20px;
+            color: #555;
+        }
+        .info-box li {
+            margin: 5px 0;
+        }
+        .info-box .note {
+            margin-top: 10px;
+            font-style: italic;
+            color: #666;
+            font-size: 0.9em;
         }
         .footer {
             background: #f5f5f5;
@@ -366,19 +453,13 @@ function Get-HTMLTemplate {
             color: #666;
             font-size: 0.9em;
         }
-        .no-data {
-            text-align: center;
-            padding: 40px;
-            color: #999;
-            font-style: italic;
-        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
             <h1>Azure VM Zone Distribution Report</h1>
-            <p>Availability Zone Analysis</p>
+            <p>Availability Zone & Infrastructure Protection Analysis</p>
         </div>
         
         <div class="content">
@@ -396,8 +477,25 @@ function Get-HTMLTemplate {
                     <p>$($Summary.VMsWithZones)</p>
                 </div>
                 <div class="summary-card">
-                    <h3>VMs without Zones</h3>
-                    <p>$($Summary.VMsWithoutZones)</p>
+                    <h3>VMs in Avail Sets</h3>
+                    <p>$($Summary.VMsWithAvailSets)</p>
+                </div>
+                <div class="summary-card">
+                    <h3>No Protection</h3>
+                    <p>$($Summary.VMsWithoutProtection)</p>
+                </div>
+            </div>
+            
+            <div class="info-box">
+                <h4>ℹ️ Understanding VM Protection Levels</h4>
+                <ul>
+                    <li><strong>Zone-Isolated:</strong> VM deployed in an availability zone (datacenter-level isolation)</li>
+                    <li><strong>Availability Set:</strong> VM in an availability set (fault/update domain separation within datacenter)</li>
+                    <li><strong>No Protection:</strong> Single instance VM without zone or availability set configuration</li>
+                </ul>
+                <div class="note">
+                    <strong>Note:</strong> True High Availability requires multiple VM instances with load balancing. 
+                    This report shows individual VM infrastructure protection configurations.
                 </div>
             </div>
             
@@ -426,6 +524,24 @@ function Get-HTMLTemplate {
             
             <div class="section">
                 <h2>VM Details</h2>
+                <div class="legend">
+                    <div class="legend-item">
+                        <div class="legend-color" style="background-color: #c8e6c9;"></div>
+                        <span>Zone-Isolated (Datacenter Protection)</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background-color: #b3e5fc;"></div>
+                        <span>Availability Set (Rack Protection)</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background-color: #ffccbc;"></div>
+                        <span>No Protection</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background-color: #fff9c4;"></div>
+                        <span>No Zone (Row Highlight)</span>
+                    </div>
+                </div>
                 <table>
                     <thead>
                         <tr>
@@ -435,6 +551,8 @@ function Get-HTMLTemplate {
                             <th>Location</th>
                             <th>Logical Zone</th>
                             <th>Physical Zone</th>
+                            <th>Availability Set</th>
+                            <th>Protection Level</th>
                             <th>VM Size</th>
                             <th>Power State</th>
                         </tr>
@@ -447,7 +565,7 @@ function Get-HTMLTemplate {
         </div>
         
         <div class="footer">
-            Generated on $(Get-Date -Format "yyyy-MM-dd HH:mm:ss") | Azure VM Zone Distribution Analysis
+            Generated on $(Get-Date -Format "yyyy-MM-dd HH:mm:ss") | Azure VM Zone Distribution & Infrastructure Protection Analysis
         </div>
     </div>
     
@@ -616,6 +734,27 @@ foreach ($sub in $subscriptions) {
             "Unknown"
         }
         
+        # Get Availability Set information
+        $availSet = "None"
+        $protectionLevel = "No Protection"
+        
+        if ($vm.AvailabilitySetReference -and $vm.AvailabilitySetReference.Id) {
+            # Extract availability set name from resource ID
+            $availSetId = $vm.AvailabilitySetReference.Id
+            $availSetName = $availSetId.Split('/')[-1]
+            $availSet = $availSetName
+            $protectionLevel = "Availability Set"
+        }
+        
+        # Determine protection level
+        if ($logicalZone -ne "No Zone") {
+            $protectionLevel = "Zone-Isolated"
+        } elseif ($availSet -ne "None") {
+            $protectionLevel = "Availability Set"
+        } else {
+            $protectionLevel = "No Protection"
+        }
+        
         # Get power state - try multiple methods
         $powerState = "Unknown"
         
@@ -646,6 +785,8 @@ foreach ($sub in $subscriptions) {
             Location         = $vm.Location
             LogicalZone      = $logicalZone
             PhysicalZone     = $physicalZone
+            AvailabilitySet  = $availSet
+            ProtectionLevel  = $protectionLevel
             VMSize           = $vm.HardwareProfile.VmSize
             PowerState       = $powerState
         }
@@ -658,10 +799,11 @@ Write-Progress -Activity "Scanning subscriptions for VMs" -Completed
 Write-Host "`n=== Step 4: Generating Report ===" -ForegroundColor Magenta
 
 $summary = @{
-    TotalVMs           = $allVMs.Count
-    TotalSubscriptions = $subscriptions.Count
-    VMsWithZones       = ($allVMs | Where-Object { $_.LogicalZone -ne "No Zone" }).Count
-    VMsWithoutZones    = ($allVMs | Where-Object { $_.LogicalZone -eq "No Zone" }).Count
+    TotalVMs              = $allVMs.Count
+    TotalSubscriptions    = $subscriptions.Count
+    VMsWithZones          = ($allVMs | Where-Object { $_.LogicalZone -ne "No Zone" }).Count
+    VMsWithAvailSets      = ($allVMs | Where-Object { $_.AvailabilitySet -ne "None" }).Count
+    VMsWithoutProtection  = ($allVMs | Where-Object { $_.ProtectionLevel -eq "No Protection" }).Count
 }
 
 # Calculate zone distribution
@@ -686,13 +828,15 @@ if ($OutputPath) {
     Write-Host "`n=== Report Generated Successfully ===" -ForegroundColor Green
     Write-Host "Report saved to: $OutputPath" -ForegroundColor Green
     Write-Host "Open the file in a web browser to view the full report with charts." -ForegroundColor Yellow
+
 } else {
     # Display console summary
     Write-Host "`n=== VM Zone Distribution Summary ===" -ForegroundColor Green
     Write-Host "`nOverview:" -ForegroundColor Cyan
     Write-Host "  Total VMs: $($summary.TotalVMs)" -ForegroundColor White
     Write-Host "  VMs with Zones: $($summary.VMsWithZones)" -ForegroundColor White
-    Write-Host "  VMs without Zones: $($summary.VMsWithoutZones)" -ForegroundColor White
+    Write-Host "  VMs in Availability Sets: $($summary.VMsWithAvailSets)" -ForegroundColor White
+    Write-Host "  VMs without Protection: $($summary.VMsWithoutProtection)" -ForegroundColor White
     Write-Host "  Subscriptions Scanned: $($summary.TotalSubscriptions)" -ForegroundColor White
     
     Write-Host "`nZone Distribution:" -ForegroundColor Cyan
@@ -704,10 +848,17 @@ if ($OutputPath) {
     
     if ($allVMs.Count -gt 0) {
         Write-Host "`nVM Details:" -ForegroundColor Cyan
-        $allVMs | Format-Table -Property VMName, SubscriptionName, ResourceGroup, Location, LogicalZone, PhysicalZone, VMSize, PowerState -AutoSize
+        $allVMs | Format-Table -Property VMName, SubscriptionName, ResourceGroup, Location, LogicalZone, PhysicalZone, AvailabilitySet, ProtectionLevel, VMSize, PowerState -AutoSize
     }
     
-    Write-Host "`nTip: Use -OutputPath parameter to generate an HTML report with charts." -ForegroundColor Yellow
+    Write-Host "\nTip: Use -OutputPath parameter to generate an HTML report with charts." -ForegroundColor Yellow
+}
+
+# Export to CSV if requested (works with or without HTML report)
+if ($ExportCSV) {
+    Write-Host "\nExporting VM details to CSV..." -ForegroundColor Cyan
+    $allVMs | Select-Object VMName, SubscriptionName, ResourceGroup, Location, LogicalZone, PhysicalZone, AvailabilitySet, ProtectionLevel, VMSize, PowerState | Export-Csv -Path $ExportCSV -NoTypeInformation -Encoding UTF8
+    Write-Host "CSV file saved to: $ExportCSV" -ForegroundColor Green
 }
 
 #endregion

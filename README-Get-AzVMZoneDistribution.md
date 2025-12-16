@@ -2,7 +2,9 @@
 
 ## Overview
 
-Analyzes virtual machine distribution across Azure availability zones with tenant selection, multi-subscription scanning, and interactive HTML reporting. This script provides comprehensive visibility into your VM zone topology, power states, and physical zone mappings.
+Analyzes virtual machine distribution across Azure availability zones with tenant selection, multi-subscription scanning, and interactive HTML reporting. This script provides comprehensive visibility into your VM zone topology, infrastructure protection configuration, power states, and physical zone mappings.
+
+**Now includes Infrastructure Protection analysis** - automatically detects and assesses availability zones, availability sets, and identifies VMs without infrastructure-level protection.
 
 ## Synopsis
 
@@ -12,10 +14,12 @@ Get-AzVMZoneDistribution.ps1 [-TenantId <string>] [-SubscriptionId <string>] [-O
 
 ## Description
 
-This script scans Azure subscriptions to analyze how VMs are distributed across availability zones. It provides:
+This script scans Azure subscriptions to analyze how VMs are distributed across availability zones and evaluates their infrastructure protection configuration. It provides:
 
 - **Tenant selection** - Interactive picker for multi-tenant environments
 - **Zone mapping** - Shows physical datacenter zones (az1, az2, az3) not just logical zones (1, 2, 3)
+- **Protection assessment** - Identifies VMs with zone isolation, availability sets, or lacking protection
+- **Availability set tracking** - Shows which VMs are in availability sets
 - **Power state tracking** - Identifies running, stopped, and deallocated VMs
 - **Visual reporting** - HTML reports with interactive charts and color-coded tables
 - **Progress tracking** - Real-time progress bars during VM scanning
@@ -70,6 +74,40 @@ Path to save HTML report. If not provided, displays summary in console.
 .\Get-AzVMZoneDistribution.ps1
 ```
 
+### -ExportCSV
+
+**Type:** String  
+**Required:** No  
+**Default:** None
+
+Path to export VM details table to CSV file. When specified, exports all VM data to the provided file path. Works with or without `-OutputPath` parameter.
+
+```powershell
+# Export to CSV with HTML report
+.\Get-AzVMZoneDistribution.ps1 -OutputPath "report.html" -ExportCSV "vm-details.csv"
+# Creates: report.html and vm-details.csv
+
+# Export to CSV without HTML report
+.\Get-AzVMZoneDistribution.ps1 -ExportCSV "vm-zone-distribution.csv"
+# Creates: vm-zone-distribution.csv
+
+# Specific subscription with CSV export
+.\Get-AzVMZoneDistribution.ps1 -SubscriptionId "sub-guid" -OutputPath "prod-vms.html" -ExportCSV "prod-vms.csv"
+# Creates: prod-vms.html and prod-vms.csv
+```
+
+**CSV Columns:**
+- VMName
+- SubscriptionName
+- ResourceGroup
+- Location
+- LogicalZone
+- PhysicalZone
+- AvailabilitySet
+- ProtectionLevel
+- VMSize
+- PowerState
+
 ## Prerequisites
 
 - **Azure PowerShell Module (Az)** - `Install-Module -Name Az -Scope CurrentUser`
@@ -110,7 +148,7 @@ No Zone 5           20.00%        -
 
 Generates interactive HTML report with:
 
-- **Summary cards** - Total VMs, zones used, VMs without zones
+- **Summary cards** - Total VMs, subscriptions scanned, VMs with zones, VMs in availability sets, VMs without protection
 - **Interactive bar chart** - Visual distribution across zones (Chart.js)
 - **Detailed VM table** - All VMs with columns:
   - VM Name
@@ -118,10 +156,16 @@ Generates interactive HTML report with:
   - Location
   - Logical Zone
   - Physical Zone
+  - Availability Set
+  - Protection Level
   - Power State
 - **Color coding**:
-  - 🟢 Green cells - Running VMs
+  - 🟢 Green cells - Zone-Isolated VMs (datacenter-level protection)
+  - 🔵 Blue cells - Availability Set VMs (rack-level protection)
+  - 🔴 Red cells - VMs without infrastructure protection
   - 🟡 Yellow rows - VMs without zones
+- **Info box** - Explains protection levels and clarifies HA requires multiple instances
+- **Visual legend** - Explains all color codes
 - **Responsive design** - Works on desktop and mobile
 
 **HTML Report Preview:**
@@ -164,7 +208,23 @@ $subId = "12345678-1234-1234-1234-123456789012"
 .\Get-AzVMZoneDistribution.ps1 -SubscriptionId $subId -OutputPath "prod-vms.html"
 ```
 
-### Example 4: Multi-Tenant Environment
+### Example 4: Export to CSV
+
+```powershell
+# Generate HTML report and export to CSV
+.\Get-AzVMZoneDistribution.ps1 -OutputPath "vm-report.html" -ExportCSV "vm-details.csv"
+# Creates: vm-report.html and vm-details.csv
+
+# Export to CSV only (no HTML)
+.\Get-AzVMZoneDistribution.ps1 -ExportCSV "vm-zone-distribution.csv"
+# Creates: vm-zone-distribution.csv
+
+# Import CSV for further analysis
+$vmData = Import-Csv "vm-details.csv"
+$vmData | Where-Object { $_.ProtectionLevel -eq "No Protection" } | Format-Table
+```
+
+### Example 5: Multi-Tenant Analysis
 
 ```powershell
 # Interactive tenant selection (when you have access to multiple tenants)
@@ -178,22 +238,23 @@ $subId = "12345678-1234-1234-1234-123456789012"
 # [Scans selected tenant...]
 ```
 
-### Example 5: Automated Reporting
+### Example 6: Automated Reporting with CSV Export
 
 ```powershell
 # Daily report script
 $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $reportPath = "reports\vm-zones-$timestamp.html"
+$csvPath = "reports\vm-zones-$timestamp.csv"
 
-.\Get-AzVMZoneDistribution.ps1 -OutputPath $reportPath
+.\Get-AzVMZoneDistribution.ps1 -OutputPath $reportPath -ExportCSV $csvPath
 
-# Email report
+# Email both HTML and CSV reports
 Send-MailMessage -To "team@contoso.com" -Subject "Daily VM Zone Report" `
-    -Body "See attached report" -Attachments $reportPath `
+    -Body "See attached reports" -Attachments $reportPath, $csvPath `
     -SmtpServer "smtp.contoso.com"
 ```
 
-### Example 6: Filter Running VMs Only
+### Example 7: Filter Running VMs Only
 
 ```powershell
 # Generate report, then filter HTML table manually
@@ -210,7 +271,29 @@ if ($output -match "Running:\s+(\d+)") {
 
 ## Use Cases
 
-### 1. Disaster Recovery Planning
+### 1. Infrastructure Protection Assessment
+
+**Scenario:** Assess protection compliance across your Azure environment to identify at-risk VMs.
+
+**Solution:**
+```powershell
+# Generate comprehensive protection report
+.\Get-AzVMZoneDistribution.ps1 -OutputPath "protection-assessment.html"
+
+# Review HTML report to identify:
+# - VMs with zone isolation (green) ✅
+# - VMs with availability sets (blue) 🔵
+# - VMs without protection (red) ⚠️
+
+# Action items based on findings:
+# 1. Red VMs → Move to zones or add to availability sets
+# 2. Blue VMs → Consider upgrading to zone-redundant architecture
+# 3. Yellow rows → Legacy VMs without zone assignment
+
+# Note: For true HA, deploy multiple instances with load balancing
+```
+
+### 2. Disaster Recovery Planning
 
 **Scenario:** Assess current VM distribution to identify single points of failure.
 
@@ -221,6 +304,7 @@ if ($output -match "Running:\s+(\d+)") {
 
 # Review HTML report to identify:
 # - VMs without zone assignments (at risk)
+# - VMs in availability sets (partial protection)
 # - Unbalanced zone distribution
 # - Critical workloads in single zones
 
@@ -228,9 +312,11 @@ if ($output -match "Running:\s+(\d+)") {
 # - Move unzoned VMs to availability zones
 # - Rebalance VMs across zones
 # - Configure zone-redundant load balancers
+# - Document protection level for each workload
+# - For critical workloads, ensure multiple instances across zones
 ```
 
-### 2. Compliance Audit
+### 3. Compliance Audit
 
 **Scenario:** Document VM zone placement for SOC2/ISO compliance.
 
@@ -245,6 +331,8 @@ $reportPath = "compliance\VM-Zone-Audit-$auditDate.html"
 # Report includes:
 # - Complete VM inventory with zones
 # - Physical datacenter mappings
+# - Availability set assignments
+# - Protection level for each VM
 # - Power state verification
 # - Visual distribution analysis
 
@@ -252,7 +340,7 @@ $reportPath = "compliance\VM-Zone-Audit-$auditDate.html"
 Copy-Item $reportPath -Destination "\\compliance-share\audits\$auditDate\"
 ```
 
-### 3. Capacity Planning
+### 4. Capacity Planning
 
 **Scenario:** Plan capacity expansion across zones to maintain balance.
 
@@ -281,29 +369,30 @@ Recommendation:
 $analysis | Out-File "capacity-plan.txt"
 ```
 
-### 4. Cost Optimization
+### 5. Cost Optimization
 
-**Scenario:** Identify deallocated VMs that can be deleted or moved.
+**Scenario:** Identify deallocated VMs and assess infrastructure overhead.
 
 **Solution:**
 ```powershell
-# Generate report showing power states
+# Generate report showing power states and protection config
 .\Get-AzVMZoneDistribution.ps1 -OutputPath "vm-power-states.html"
 
-# Review HTML report for yellow rows (deallocated VMs)
-# Color coding:
-# - Green = Running (incurring compute costs)
-# - Yellow = Stopped/Deallocated (storage costs only)
+# Review HTML report:
+# - Green cells = Running (incurring compute costs)
+# - Deallocated VMs = Storage costs only
+# - Red cells = No protection (single VM costs)
+# - Blue cells = Availability sets (infrastructure overhead)
 
 # Identify candidates:
 # - VMs deallocated > 30 days → Delete?
-# - VMs in zones but stopped → Move to cheaper regions?
+# - Dev/Test VMs with protection → Evaluate if needed
 # - Orphaned unzoned VMs → Cleanup targets
 ```
 
-### 5. Multi-Subscription Governance
+### 6. Multi-Subscription Governance
 
-**Scenario:** Enterprise with 50+ subscriptions needs zone governance.
+**Scenario:** Enterprise with 50+ subscriptions needs zone and protection governance.
 
 **Solution:**
 ```powershell
@@ -320,14 +409,27 @@ foreach ($sub in $subscriptions) {
 }
 
 # Aggregate findings
+# - Count subscriptions with VMs lacking protection
+# - Identify subscriptions with poor zone balance
+# - Find availability set usage patterns
+# - Generate executive summary
+```
+
+### 7. Migration Validation
+    $fileName = "reports\$($sub.Name)-zones.html"
+    .\Get-AzVMZoneDistribution.ps1 -SubscriptionId $sub.Id -OutputPath $fileName
+    Write-Host "Created report: $fileName"
+}
+
+# Aggregate findings
 # - Count subscriptions with unzoned VMs
 # - Identify subscriptions with poor zone balance
 # - Generate executive summary
 ```
 
-### 6. Migration Validation
+### 7. Migration Validation
 
-**Scenario:** Verify VMs were correctly migrated to availability zones.
+**Scenario:** Verify VMs were correctly migrated to availability zones or sets.
 
 **Solution:**
 ```powershell
@@ -340,13 +442,14 @@ foreach ($sub in $subscriptions) {
 .\Get-AzVMZoneDistribution.ps1 -OutputPath "post-migration.html"
 
 # Compare reports:
-# - Verify "VMs without Zones" decreased to 0
+# - Verify protection level changed from "No Protection" to "Zone-Isolated" or "Availability Set"
 # - Confirm zone distribution matches plan
 # - Validate all VMs show correct physical zones
 # - Check power states (all VMs should be running)
+# - Confirm no VMs lost infrastructure protection during migration
 ```
 
-### 7. Incident Response
+### 8. Incident Response
 
 **Scenario:** Azure announces maintenance on physical zone az2, identify impacted VMs.
 
@@ -358,9 +461,14 @@ foreach ($sub in $subscriptions) {
 # Open HTML report and filter table by Physical Zone = "az2"
 # Export impacted VM list
 
+# Assess impact:
+# - VMs in az2 only → High risk
+# - VMs in availability sets → Check if other instances in different zones
+# - VMs without protection → Single instance, no redundancy
+
 # Create communication plan:
 # - Notify owners of VMs in az2
-# - Schedule failover testing
+# - Schedule failover testing (for multi-instance workloads)
 # - Prepare rollback procedures
 # - Monitor during maintenance window
 ```
