@@ -149,7 +149,12 @@ No Zone 5           20.00%        -
 Generates interactive HTML report with:
 
 - **Summary cards** - Total VMs, subscriptions scanned, VMs with zones, VMs in availability sets, VMs without protection
-- **Interactive bar chart** - Visual distribution across zones (Chart.js)
+- **Info box** - Explains protection levels and clarifies HA requires multiple instances
+- **Zone Distribution by Region table** - Shows VM counts per zone, grouped by Azure region with percentages
+- **Interactive horizontal bar chart** - Visual distribution across zones grouped by region (Chart.js)
+  - Regions displayed on Y-axis for better readability
+  - Stacked bars showing zone distribution (az1, az2, az3, No Zone)
+  - Color-coded by zone for easy identification
 - **Detailed VM table** - All VMs with columns:
   - VM Name
   - Resource Group
@@ -164,7 +169,6 @@ Generates interactive HTML report with:
   - 🔵 Blue cells - Availability Set VMs (rack-level protection)
   - 🔴 Red cells - VMs without infrastructure protection
   - 🟡 Yellow rows - VMs without zones
-- **Info box** - Explains protection levels and clarifies HA requires multiple instances
 - **Visual legend** - Explains all color codes
 - **Responsive design** - Works on desktop and mobile
 
@@ -174,9 +178,11 @@ Generates interactive HTML report with:
 <!-- Opens in browser showing styled report -->
 VM Distribution Report
 ======================
-[Summary Cards: 25 Total | 3 Zones | 5 Unzoned]
-[Bar Chart: Zone Distribution Visualization]
-[Table: All VM Details with Color Coding]
+[Summary Cards: 468 Total | 56 Subscriptions | 203 Zones | 2 Avail Sets | 263 No Protection]
+[Info Box: Protection Level Explanations]
+[Region Table: Zone distribution grouped by region]
+[Horizontal Bar Chart: Visual distribution by region]
+[VM Details Table: All VM Details with Color Coding]
 ```
 
 ## Usage Examples
@@ -305,15 +311,17 @@ if ($output -match "Running:\s+(\d+)") {
 # Review HTML report to identify:
 # - VMs without zone assignments (at risk)
 # - VMs in availability sets (partial protection)
-# - Unbalanced zone distribution
+# - Unbalanced zone distribution per region
 # - Critical workloads in single zones
+# - Regional resilience gaps
 
 # Action items:
 # - Move unzoned VMs to availability zones
-# - Rebalance VMs across zones
+# - Rebalance VMs across zones within each region
 # - Configure zone-redundant load balancers
 # - Document protection level for each workload
 # - For critical workloads, ensure multiple instances across zones
+# - Review region-specific zone distribution for capacity planning
 ```
 
 ### 3. Compliance Audit
@@ -349,21 +357,25 @@ Copy-Item $reportPath -Destination "\\compliance-share\audits\$auditDate\"
 # Get current distribution
 .\Get-AzVMZoneDistribution.ps1 -OutputPath "current-capacity.html"
 
-# Review zone distribution percentages
-# If Zone 1: 60%, Zone 2: 30%, Zone 3: 10%
-# → Plan new deployments to Zone 2 and Zone 3
+# Review region-based zone distribution chart
+# Example: northeurope region shows:
+# - az1: 89 VMs (20%)
+# - az2: 111 VMs (23.78%)
+# - az3: 98 VMs (22.16%)
+# - No Zone: 151 VMs (34.05%)
 
 # Create deployment plan
 $analysis = @"
-Current Distribution:
-- az1: 60% (Overutilized)
-- az2: 30% (Target)
-- az3: 10% (Underutilized)
+Current Distribution (North Europe):
+- az1: 20% (Balanced)
+- az2: 24% (Slightly high)
+- az3: 22% (Balanced)
+- No Zone: 34% (High - needs migration)
 
 Recommendation:
-- Deploy next 10 VMs to Zone 3
-- Move 5 VMs from Zone 1 to Zone 3
-- Target: 40% / 30% / 30% distribution
+- Migrate No Zone VMs to zones
+- Deploy new workloads evenly across az1, az2, az3
+- Target: 33% / 33% / 33% distribution, 0% unzoned
 "@
 
 $analysis | Out-File "capacity-plan.txt"
@@ -611,6 +623,12 @@ if ([string]::IsNullOrWhiteSpace($powerState)) {
 - Use `-SubscriptionId` to target specific subscriptions
 - Run during off-hours for large scans
 - Progress bars show real-time status
+- Script uses hybrid approach:
+  - Subscriptions with ≤100 VMs: Fast scan (1 API call)
+  - Subscriptions with >100 VMs: Detailed scan with progress tracking
+
+**Note on Report Variance:**
+In dynamic environments with active workloads (auto-scaling, CI/CD deployments), VM counts may vary between consecutive runs. This is expected behavior - variations of 1-2% typically indicate normal infrastructure changes (VMs being created/deleted, Databricks clusters scaling, etc.). For audit purposes, use the `-ExportCSV` parameter to capture point-in-time snapshots.
 
 ## Error Handling
 

@@ -215,6 +215,11 @@ Contributions are welcome! Please feel free to submit issues or pull requests.
   - Works with or without HTML report generation
   - Includes all VM details: Name, Subscription, Resource Group, Location, Zones, Protection Level, Size, Power State
   - Perfect for integration with Excel, PowerBI, or custom analysis scripts
+- **IMPROVED**: Fixed 100 VM throttling limit in Get-AzVMZoneDistribution.ps1
+  - Now retrieves VM list first, then queries status individually
+  - Supports subscriptions with any number of VMs (no more 100 VM limit warning)
+  - Added per-VM progress indicator for large subscriptions
+  - More reliable power state retrieval
 - Updated documentation with CSV export examples
 
 ### Version 2.1

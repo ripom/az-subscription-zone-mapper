@@ -201,7 +201,8 @@ function Get-HTMLTemplate {
         [string]$Title,
         [array]$VMData,
         [hashtable]$Summary,
-        [hashtable]$ZoneDistribution
+        [hashtable]$ZoneDistribution,
+        [hashtable]$RegionZoneDistribution
     )
     
     # Generate table rows
@@ -250,7 +251,7 @@ function Get-HTMLTemplate {
     $chartLabels = ($ZoneDistribution.Keys | Sort-Object) -join '","'
     $chartData = ($ZoneDistribution.Keys | Sort-Object | ForEach-Object { $ZoneDistribution[$_] }) -join ','
     
-    # Generate zone distribution table
+    # Generate zone distribution table (global)
     $zoneDistTable = ""
     foreach ($zone in ($ZoneDistribution.Keys | Sort-Object)) {
         $count = $ZoneDistribution[$zone]
@@ -262,6 +263,75 @@ function Get-HTMLTemplate {
                 <td>$percentage%</td>
             </tr>
 "@
+    }
+    
+    # Generate region-based zone distribution data for stacked bar chart
+    $allRegions = $RegionZoneDistribution.Keys | Sort-Object
+    $allZones = @('az1', 'az2', 'az3', 'No Zone') # Standard zones
+    
+    # Build datasets for each zone
+    $datasets = @()
+    $zoneColors = @{
+        'az1' = @{ bg = 'rgba(102, 126, 234, 0.8)'; border = 'rgba(102, 126, 234, 1)' }
+        'az2' = @{ bg = 'rgba(118, 75, 162, 0.8)'; border = 'rgba(118, 75, 162, 1)' }
+        'az3' = @{ bg = 'rgba(237, 100, 166, 0.8)'; border = 'rgba(237, 100, 166, 1)' }
+        'No Zone' = @{ bg = 'rgba(255, 159, 64, 0.8)'; border = 'rgba(255, 159, 64, 1)' }
+    }
+    
+    foreach ($zone in $allZones) {
+        $dataPoints = @()
+        foreach ($region in $allRegions) {
+            if ($RegionZoneDistribution[$region].ContainsKey($zone)) {
+                $dataPoints += $RegionZoneDistribution[$region][$zone]
+            } else {
+                $dataPoints += 0
+            }
+        }
+        
+        $color = $zoneColors[$zone]
+        $datasets += @"
+        {
+            label: '$zone',
+            data: [$($dataPoints -join ',')],
+            backgroundColor: '$($color.bg)',
+            borderColor: '$($color.border)',
+            borderWidth: 2
+        }
+"@
+    }
+    
+    $regionLabelsJson = ($allRegions | ForEach-Object { "`"$_`"" }) -join ','
+    $datasetsJson = $datasets -join ','
+    
+    # Generate region-zone distribution table
+    $regionZoneTable = ""
+    foreach ($region in $allRegions) {
+        $regionTotal = ($RegionZoneDistribution[$region].Values | Measure-Object -Sum).Sum
+        $zoneCount = $RegionZoneDistribution[$region].Keys.Count
+        $firstRow = $true
+        foreach ($zone in ($RegionZoneDistribution[$region].Keys | Sort-Object)) {
+            $count = $RegionZoneDistribution[$region][$zone]
+            $percentage = if ($regionTotal -gt 0) { [math]::Round(($count / $regionTotal) * 100, 2) } else { 0 }
+            if ($firstRow) {
+                $regionZoneTable += @"
+            <tr>
+                <td rowspan="$zoneCount"><strong>$region</strong><br><small>Total: $regionTotal VMs</small></td>
+                <td>$zone</td>
+                <td>$count</td>
+                <td>$percentage%</td>
+            </tr>
+"@
+                $firstRow = $false
+            } else {
+                $regionZoneTable += @"
+            <tr>
+                <td>$zone</td>
+                <td>$count</td>
+                <td>$percentage%</td>
+            </tr>
+"@
+            }
+        }
     }
     
     $html = @"
@@ -500,25 +570,26 @@ function Get-HTMLTemplate {
             </div>
             
             <div class="section">
-                <h2>Zone Distribution</h2>
+                <h2>Zone Distribution by Region</h2>
                 <table>
                     <thead>
                         <tr>
+                            <th>Azure Region</th>
                             <th>Physical Zone</th>
                             <th>VM Count</th>
                             <th>Percentage</th>
                         </tr>
                     </thead>
                     <tbody>
-                        $zoneDistTable
+                        $regionZoneTable
                     </tbody>
                 </table>
             </div>
             
             <div class="section">
-                <h2>Zone Distribution Chart</h2>
+                <h2>Zone Distribution by Region Chart</h2>
                 <div class="chart-container">
-                    <canvas id="zoneChart"></canvas>
+                    <canvas id="regionZoneChart"></canvas>
                 </div>
             </div>
             
@@ -570,51 +641,48 @@ function Get-HTMLTemplate {
     </div>
     
     <script>
-        const ctx = document.getElementById('zoneChart').getContext('2d');
-        const zoneChart = new Chart(ctx, {
+        // Region-based Zone Distribution Chart (Horizontal Bar)
+        const regionZoneCtx = document.getElementById('regionZoneChart').getContext('2d');
+        new Chart(regionZoneCtx, {
             type: 'bar',
             data: {
-                labels: ["$chartLabels"],
-                datasets: [{
-                    label: 'Number of VMs',
-                    data: [$chartData],
-                    backgroundColor: [
-                        'rgba(102, 126, 234, 0.8)',
-                        'rgba(118, 75, 162, 0.8)',
-                        'rgba(237, 100, 166, 0.8)',
-                        'rgba(255, 159, 64, 0.8)',
-                        'rgba(75, 192, 192, 0.8)'
-                    ],
-                    borderColor: [
-                        'rgba(102, 126, 234, 1)',
-                        'rgba(118, 75, 162, 1)',
-                        'rgba(237, 100, 166, 1)',
-                        'rgba(255, 159, 64, 1)',
-                        'rgba(75, 192, 192, 1)'
-                    ],
-                    borderWidth: 2
-                }]
+                labels: [$regionLabelsJson],
+                datasets: [$datasetsJson]
             },
             options: {
+                indexAxis: 'y',
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
                     legend: {
-                        display: false
+                        display: true,
+                        position: 'top'
                     },
                     title: {
                         display: true,
-                        text: 'VM Distribution Across Physical Zones',
+                        text: 'Zone Distribution by Region',
                         font: {
                             size: 18
                         }
                     }
                 },
                 scales: {
-                    y: {
+                    x: {
+                        stacked: true,
                         beginAtZero: true,
                         ticks: {
                             stepSize: 1
+                        },
+                        title: {
+                            display: true,
+                            text: 'Number of VMs'
+                        }
+                    },
+                    y: {
+                        stacked: true,
+                        title: {
+                            display: true,
+                            text: 'Azure Region'
                         }
                     }
                 }
@@ -703,24 +771,46 @@ foreach ($sub in $subscriptions) {
     }
     $zoneMapping = $zoneMappingCache[$subscriptionId]
     
-    # Get all VMs in subscription
+    # Get all VMs - use hybrid approach for performance
+    # For subscriptions with ≤100 VMs, use fast Get-AzVM -Status (1 API call)
+    # For subscriptions with >100 VMs, get list first then query individually (to avoid throttling warning)
     try {
-        $vms = Get-AzVM -Status
+        # First, get VM count without status
+        $vmList = Get-AzVM
+        $vmCount = $vmList.Count
+        
+        if ($vmCount -eq 0) {
+            Write-Host "    No VMs found in this subscription." -ForegroundColor Gray
+            continue
+        }
+        
+        Write-Host "    Found $vmCount VM(s)" -ForegroundColor Green
+        
+        # Decide which method to use based on VM count
+        if ($vmCount -le 100) {
+            # Fast method: single API call with status
+            Write-Host "    Using fast scan (≤100 VMs)..." -ForegroundColor Gray
+            $vms = Get-AzVM -Status
+        } else {
+            # Detailed method: individual status queries
+            Write-Host "    Using detailed scan (>100 VMs, retrieving status individually)..." -ForegroundColor Gray
+            $vms = $vmList
+        }
     }
     catch {
         Write-Host "    Error retrieving VMs: $_" -ForegroundColor Red
         continue
     }
     
-    if ($vms.Count -eq 0) {
-        Write-Host "    No VMs found in this subscription." -ForegroundColor Gray
-        continue
-    }
-    
-    Write-Host "    Found $($vms.Count) VM(s)" -ForegroundColor Green
-    
     # Process each VM
+    $vmCounter = 0
     foreach ($vm in $vms) {
+        $vmCounter++
+        if ($vmCount -gt 100) {
+            $currentVMName = $vm.Name
+            Write-Progress -Activity "Processing VMs in $subscriptionName" -Status "VM $vmCounter of ${vmCount}: $currentVMName" -PercentComplete (($vmCounter / $vmCount) * 100) -Id 2
+        }
+        
         $logicalZone = if ($vm.Zones -and $vm.Zones.Count -gt 0) { $vm.Zones[0] } else { "No Zone" }
         $physicalZone = if ($logicalZone -ne "No Zone" -and $zoneMapping) {
             if ($zoneMapping.ContainsKey($logicalZone)) {
@@ -755,25 +845,36 @@ foreach ($sub in $subscriptions) {
             $protectionLevel = "No Protection"
         }
         
-        # Get power state - try multiple methods
+        # Get power state
         $powerState = "Unknown"
         
-        # Method 1: Check PowerState property directly
-        if ($vm.PowerState) {
-            $powerState = $vm.PowerState
-        }
-        # Method 2: Check Statuses collection
-        elseif ($vm.Statuses) {
-            $powerStatusObj = $vm.Statuses | Where-Object { $_.Code -like "PowerState/*" } | Select-Object -First 1
-            if ($powerStatusObj) {
-                $powerState = $powerStatusObj.DisplayStatus
+        if ($vmCount -le 100) {
+            # Fast method - status already available from Get-AzVM -Status
+            if ($vm.PowerState) {
+                $powerState = $vm.PowerState
+            } elseif ($vm.Statuses) {
+                $powerStatusObj = $vm.Statuses | Where-Object { $_.Code -like "PowerState/*" } | Select-Object -First 1
+                if ($powerStatusObj) {
+                    $powerState = $powerStatusObj.DisplayStatus
+                }
             }
-        }
-        # Method 3: Check InstanceView if available
-        elseif ($vm.InstanceView -and $vm.InstanceView.Statuses) {
-            $powerStatusObj = $vm.InstanceView.Statuses | Where-Object { $_.Code -like "PowerState/*" } | Select-Object -First 1
-            if ($powerStatusObj) {
-                $powerState = $powerStatusObj.DisplayStatus
+        } else {
+            # Detailed method - query status individually
+            try {
+                $vmStatus = Get-AzVM -ResourceGroupName $vm.ResourceGroupName -Name $vm.Name -Status -ErrorAction SilentlyContinue
+                if ($vmStatus) {
+                    if ($vmStatus.PowerState) {
+                        $powerState = $vmStatus.PowerState
+                    } elseif ($vmStatus.Statuses) {
+                        $powerStatusObj = $vmStatus.Statuses | Where-Object { $_.Code -like "PowerState/*" } | Select-Object -First 1
+                        if ($powerStatusObj) {
+                            $powerState = $powerStatusObj.DisplayStatus
+                        }
+                    }
+                }
+            }
+            catch {
+                $powerState = "Unknown"
             }
         }
         
@@ -791,6 +892,10 @@ foreach ($sub in $subscriptions) {
             PowerState       = $powerState
         }
     }
+    
+    if ($vmCount -gt 100) {
+        Write-Progress -Activity "Processing VMs in $subscriptionName" -Completed -Id 2
+    }
 }
 
 Write-Progress -Activity "Scanning subscriptions for VMs" -Completed
@@ -806,7 +911,7 @@ $summary = @{
     VMsWithoutProtection  = ($allVMs | Where-Object { $_.ProtectionLevel -eq "No Protection" }).Count
 }
 
-# Calculate zone distribution
+# Calculate zone distribution (global)
 $zoneDistribution = @{}
 foreach ($vm in $allVMs) {
     $zone = $vm.PhysicalZone
@@ -817,10 +922,27 @@ foreach ($vm in $allVMs) {
     }
 }
 
+# Calculate zone distribution grouped by region
+$regionZoneDistribution = @{}
+foreach ($vm in $allVMs) {
+    $region = $vm.Location
+    $zone = $vm.PhysicalZone
+    
+    if (-not $regionZoneDistribution.ContainsKey($region)) {
+        $regionZoneDistribution[$region] = @{}
+    }
+    
+    if ($regionZoneDistribution[$region].ContainsKey($zone)) {
+        $regionZoneDistribution[$region][$zone]++
+    } else {
+        $regionZoneDistribution[$region][$zone] = 1
+    }
+}
+
 if ($OutputPath) {
     # Generate HTML report
     Write-Host "Generating HTML report..." -ForegroundColor Cyan
-    $htmlContent = Get-HTMLTemplate -Title "Azure VM Zone Distribution" -VMData $allVMs -Summary $summary -ZoneDistribution $zoneDistribution
+    $htmlContent = Get-HTMLTemplate -Title "Azure VM Zone Distribution" -VMData $allVMs -Summary $summary -ZoneDistribution $zoneDistribution -RegionZoneDistribution $regionZoneDistribution
 
     # Save to file
     $htmlContent | Out-File -FilePath $OutputPath -Encoding UTF8
